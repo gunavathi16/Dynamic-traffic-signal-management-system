@@ -1,0 +1,87 @@
+/* General */
+body {
+  font-family: 'Poppins', sans-serif;
+  background: #f0f4f8;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Login Page */
+.login-container {
+  padding: 2rem;
+  background: #ffffffcc;
+  border-radius: 15px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  width: 350px;
+  backdrop-filter: blur(5px);
+}
+
+.btn-primary {
+  background: linear-gradient(90deg,#00c6ff,#0072ff);
+  border: none;
+  transition: all 0.3s ease;
+}
+.btn-primary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+/* Sidebar */
+.sidebar {
+  height: 100vh;
+  width: 220px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  background: linear-gradient(180deg,#0072ff,#00c6ff);
+  padding-top: 60px;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+.sidebar a {
+  padding: 15px 25px;
+  text-decoration: none;
+  font-size: 1rem;
+  color: white;
+  display: block;
+  transition: all 0.3s ease;
+  border-radius: 8px;
+  margin: 5px 10px;
+}
+.sidebar a:hover {
+  background: rgba(255,255,255,0.2);
+  transform: translateX(5px);
+}
+
+/* Main content */
+.main {
+  margin-left: 220px;
+  padding: 20px;
+  transition: all 0.3s;
+}
+
+/* Cards */
+.card {
+  border-radius: 15px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+  transition: transform 0.3s;
+}
+.card:hover {
+  transform: translateY(-5px);
+}
+
+/* Charts */
+.chart-container {
+  height: 250px;
+}
+
+/* Alerts list animation */
+.list-group-item {
+  border: none;
+  border-radius: 8px;
+  margin-bottom: 5px;
+  transition: all 0.3s ease;
+}
+
