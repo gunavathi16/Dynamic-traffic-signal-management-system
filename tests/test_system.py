@@ -13,7 +13,10 @@ from fastapi.testclient import TestClient
 
 from ai_agent.sql_safety import validate_and_sanitize_sql, SQLSafetyViolation
 from ai_agent.nl_sql_agent import TrafficNLSQLAgent
-from db.db_manager import init_db, execute_safe_query
+from db.db_manager import (
+    init_db, execute_safe_query, hash_password, verify_password,
+    authenticate_admin, seed_admin_user
+)
 from traffic_engine.adaptive_controller import traffic_controller
 from server import app
 
@@ -89,6 +92,30 @@ class TestAdaptiveController(unittest.TestCase):
             self.assertEqual(n["current_phase"], 0)  # EW Green hold
 
 
+class TestAdminAuthentication(unittest.TestCase):
+    def setUp(self):
+        init_db()
+
+    def test_password_hash_and_verify(self):
+        pw = "SuperSecretKey!2026"
+        pw_hash, salt = hash_password(pw)
+        self.assertTrue(verify_password(pw, pw_hash, salt))
+        self.assertFalse(verify_password("WrongPassword", pw_hash, salt))
+
+    def test_admin_authentication_success(self):
+        # Default seeded admin
+        admin = authenticate_admin("admin", "admin123")
+        self.assertIsNotNone(admin)
+        self.assertEqual(admin["username"], "admin")
+        self.assertEqual(admin["role"], "SUPER_ADMIN")
+
+    def test_admin_authentication_failure(self):
+        # Non-existent user
+        self.assertIsNone(authenticate_admin("unknown_user", "admin123"))
+        # Wrong password
+        self.assertIsNone(authenticate_admin("admin", "wrongpassword!"))
+
+
 class TestServerEndpoints(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
@@ -107,6 +134,52 @@ class TestServerEndpoints(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertTrue(data["safety_passed"])
 
+    def test_login_page_served(self):
+        res = self.client.get("/login")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("INTELLIFLOW TOC", res.text)
+        self.assertIn("Administrator ID", res.text)
+
+    def test_simulation_page_served(self):
+        res = self.client.get("/simulation")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("INTELLIFLOW", res.text)
+        self.assertIn("Arterial Corridor Digital Twin Simulator", res.text)
+        self.assertIn("AI Traffic Copilot", res.text)
+
+    def test_simulation_page_with_node_param(self):
+        res = self.client.get("/simulation?node=Node2")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("simNodeChips", res.text)
+        self.assertIn("nodeInspectorCard", res.text)
+
+    def test_admin_auth_flow(self):
+        # Invalid credentials -> 401
+        res_fail = self.client.post("/api/auth/login", json={"username": "admin", "password": "badpassword"})
+        self.assertEqual(res_fail.status_code, 401)
+
+        # Valid credentials -> 200 with token
+        res_login = self.client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+        self.assertEqual(res_login.status_code, 200)
+        body = res_login.json()
+        self.assertTrue(body["success"])
+        self.assertIn("token", body)
+        token = body["token"]
+
+        # Verify active session
+        res_verify = self.client.get("/api/auth/verify", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(res_verify.status_code, 200)
+        self.assertTrue(res_verify.json()["authenticated"])
+
+        # Logout session
+        res_logout = self.client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(res_logout.status_code, 200)
+
+        # Verify session is now revoked -> 401
+        res_revoked = self.client.get("/api/auth/verify", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(res_revoked.status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()
+

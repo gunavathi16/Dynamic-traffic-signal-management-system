@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="INTELLIFLOW Intelligent Transportation Operations Center - Administrator Authentication Gateway. Restricted to authorized personnel.">
+    <title>INTELLIFLOW TOC // Admin Authentication Gateway</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Dedicated Login Portal Layout */
+        body.login-body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: radial-gradient(circle at 50% 20%, #0d1b2a 0%, #050a14 60%, #020408 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #f8fafc;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Ambient Cyber Grid & Glow */
+        .login-grid-bg {
+            position: absolute;
+            inset: 0;
+            background-image: 
+                linear-gradient(to right, rgba(6, 182, 212, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(6, 182, 212, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .ambient-glow-orb {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(14, 165, 233, 0.15) 0%, rgba(16, 185, 129, 0.05) 45%, transparent 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            filter: blur(40px);
+            pointer-events: none;
+            z-index: 0;
+            animation: pulseOrb 6s ease-in-out infinite alternate;
+        }
+
+        @keyframes pulseOrb {
+            0% { transform: translate(-50%, -50%) scale(0.9); opacity: 0.7; }
+            100% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+        }
+
+        .login-wrapper {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 460px;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .login-card {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 18px;
+            padding: 38px 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.65), 0 0 35px rgba(6, 182, 212, 0.15);
+            transition: transform 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .login-card.shake {
+            animation: shakeCard 0.45s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shakeCard {
+            10%, 90% { transform: translate3d(-2px, 0, 0); }
+            20%, 80% { transform: translate3d(4px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+            40%, 60% { transform: translate3d(6px, 0, 0); }
+        }
+
+        .login-brand-strip {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .brand-logo-img {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.3);
+        }
+
+        .brand-shield-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(16, 185, 129, 0.2));
+            border: 1px solid rgba(6, 182, 212, 0.4);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #38bdf8;
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
+        }
+
+        .brand-title-group h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            margin: 0;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .brand-title-group .sub {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 2px;
+        }
+
+        /* Clearance Pill */
+        .clearance-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+            padding: 5px 12px;
+            border-radius: 9999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 22px;
+            width: 100%;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+
+        .clearance-indicator {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background-color: #ef4444;
+            box-shadow: 0 0 8px #ef4444;
+            animation: pulseIndicator 1.5s infinite;
+        }
+
+        @keyframes pulseIndicator {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Form Controls */
+        .form-group {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: #cbd5e1;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 8px;
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-icon {
+            position: absolute;
+            left: 14px;
+            color: #64748b;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            transition: color 0.2s ease;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 13px 44px 13px 42px;
+            background: rgba(2, 6, 23, 0.75);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.2s ease;
+            box-sizing: border-box;
+        }
+
+        .form-input:focus {
+            border-color: #38bdf8;
+            background: rgba(2, 6, 23, 0.95);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2), 0 0 15px rgba(56, 189, 248, 0.15);
+        }
+
+        .form-input:focus + .input-icon,
+        .input-wrapper:focus-within .input-icon {
+            color: #38bdf8;
+        }
+
+        .btn-toggle-pw {
+            position: absolute;
+            right: 12px;
+            background: transparent;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            padding: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: color 0.2s ease;
+        }
+
+        .btn-toggle-pw:hover {
+            color: #e2e8f0;
+        }
+
+        /* Demo Helper Chip */
+        .demo-helper-box {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px dashed rgba(56, 189, 248, 0.3);
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.78rem;
+            color: #94a3b8;
+        }
+
+        .btn-autofill {
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-autofill:hover {
+            background: rgba(56, 189, 248, 0.3);
+            color: #ffffff;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+        }
+
+        /* Submit Button */
+        .btn-login-submit {
+            width: 100%;
+            padding: 14px 20px;
+            background: linear-gradient(135deg, #0284c7 0%, #0f766e 100%);
+            border: 1px solid #38bdf8;
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            box-shadow: 0 4px 18px rgba(2, 132, 199, 0.4);
+            transition: all 0.25s ease;
+        }
+
+        .btn-login-submit:hover:not(:disabled) {
+            background: linear-gradient(135deg, #0369a1 0%, #0d9488 100%);
+            box-shadow: 0 6px 25px rgba(2, 132, 199, 0.6), 0 0 20px rgba(56, 189, 248, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .btn-login-submit:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        .btn-login-submit:disabled {
+            opacity: 0.65;
+            cursor: not-allowed;
+            filter: grayscale(30%);
+        }
+
+        /* Alerts */
+        .login-alert {
+            display: none;
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            color: #fca5a5;
+            font-size: 0.82rem;
+            line-height: 1.4;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .login-alert.visible {
+            display: flex;
+        }
+
+        .login-alert.success {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.45);
+            color: #6ee7b7;
+        }
+
+        /* Footer Notes */
+        .login-security-notice {
+            margin-top: 24px;
+            text-align: center;
+            font-size: 0.72rem;
+            color: #64748b;
+            line-height: 1.5;
+        }
+
+        /* Spinner */
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #ffffff;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="login-body">
+
+    <div class="login-grid-bg"></div>
+    <div class="ambient-glow-orb"></div>
+
+    <div class="login-wrapper">
+        <div class="login-card" id="loginCard">
+            
+            <!-- Branding -->
+            <div class="login-brand-strip">
+                <img src="LOGO1.jpg" alt="INTELLIFLOW Logo" class="brand-logo-img" onerror="this.style.display='none'; document.getElementById('fallbackShield').style.display='flex';">
+                <div class="brand-shield-icon" id="fallbackShield" style="display: none;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        <path d="M9 12l2 2 4-4"/>
+                    </svg>
+                </div>
+                <div class="brand-title-group">
+                    <h1>INTELLIFLOW TOC</h1>
+                    <div class="sub">Intelligent Operations Gateway</div>
+                </div>
+            </div>
+
+            <!-- Security Clearance Banner -->
+            <div class="clearance-pill">
+                <span class="clearance-indicator"></span>
+                <span>Restricted Access // Level 4 Admin Only</span>
+            </div>
+
+            <!-- Alert Box -->
+            <div class="login-alert" id="loginAlert" role="alert">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0;">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span id="alertMessage">Invalid administrator credentials.</span>
+            </div>
+
+            <!-- Credentials Form -->
+            <form id="loginForm" autocomplete="off">
+                <div class="form-group">
+                    <label for="adminUsername" class="form-label">Administrator ID</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                        </span>
+                        <input type="text" id="adminUsername" class="form-input" placeholder="admin" required autofocus>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="adminPassword" class="form-label">Master Access Key</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                            </svg>
+                        </span>
+                        <input type="password" id="adminPassword" class="form-input" placeholder="••••••••••••" required>
+                        <button type="button" class="btn-toggle-pw" id="btnTogglePassword" title="Toggle password visibility">
+                            <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Demo helper -->
+                <div class="demo-helper-box">
+                    <span>Default: <strong>admin</strong> / <strong>admin123</strong></span>
+                    <button type="button" class="btn-autofill" id="btnAutofill">Autofill</button>
+                </div>
+
+                <button type="submit" class="btn-login-submit" id="btnSubmit">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                        <polyline points="10 17 15 12 10 7"/>
+                        <line x1="15" y1="12" x2="3" y2="12"/>
+                    </svg>
+                    <span id="submitText">Authorize & Enter TOC</span>
+                </button>
+            </form>
+
+            <div class="login-security-notice">
+                Protected by AST-Level Read-Only Shield & PBKDF2-HMAC-SHA256 Encryption.<br>
+                All access events logged to TOC Security Audit Stream.
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Check if already authenticated
+        async function checkExistingAuth() {
+            const token = localStorage.getItem('traffic_admin_token') || sessionStorage.getItem('traffic_admin_token');
+            if (token) {
+                try {
+                    const res = await fetch('/api/auth/verify', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    if (res.ok) {
+                        window.location.href = '/';
+                    }
+                } catch (e) {
+                    // ignore network errors
+                }
+            }
+        }
+        checkExistingAuth();
+
+        // Elements
+        const loginForm = document.getElementById('loginForm');
+        const loginCard = document.getElementById('loginCard');
+        const adminUsername = document.getElementById('adminUsername');
+        const adminPassword = document.getElementById('adminPassword');
+        const btnTogglePassword = document.getElementById('btnTogglePassword');
+        const btnAutofill = document.getElementById('btnAutofill');
+        const btnSubmit = document.getElementById('btnSubmit');
+        const submitText = document.getElementById('submitText');
+        const loginAlert = document.getElementById('loginAlert');
+        const alertMessage = document.getElementById('alertMessage');
+
+        // Toggle Password
+        btnTogglePassword.addEventListener('click', () => {
+            if (adminPassword.type === 'password') {
+                adminPassword.type = 'text';
+                btnTogglePassword.style.color = '#38bdf8';
+            } else {
+                adminPassword.type = 'password';
+                btnTogglePassword.style.color = '#64748b';
+            }
+        });
+
+        // Quick Autofill
+        btnAutofill.addEventListener('click', () => {
+            adminUsername.value = 'admin';
+            adminPassword.value = 'admin123';
+            adminPassword.focus();
+        });
+
+        function showAlert(msg, isSuccess = false) {
+            alertMessage.textContent = msg;
+            loginAlert.className = 'login-alert visible' + (isSuccess ? ' success' : '');
+            if (!isSuccess) {
+                loginCard.classList.remove('shake');
+                void loginCard.offsetWidth; // Trigger reflow
+                loginCard.classList.add('shake');
+            }
+        }
+
+        function hideAlert() {
+            loginAlert.className = 'login-alert';
+        }
+
+        // Form Submission
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideAlert();
+
+            const username = adminUsername.value.trim();
+            const password = adminPassword.value;
+
+            if (!username || !password) {
+                showAlert('Please provide both administrator ID and master access key.');
+                return;
+            }
+
+            // Set loading state
+            btnSubmit.disabled = true;
+            submitText.innerHTML = '<span class="spinner"></span> Verifying Clearance...';
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    showAlert('Clearance verified. Launching TOC Operations Center...', true);
+                    // Store token & user
+                    localStorage.setItem('traffic_admin_token', data.token);
+                    localStorage.setItem('traffic_admin_user', JSON.stringify(data.user));
+                    sessionStorage.setItem('traffic_admin_token', data.token);
+
+                    // Redirect to dashboard
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 650);
+                } else {
+                    showAlert(data.detail || 'Access Denied: Invalid administrator credentials.');
+                    adminPassword.value = '';
+                    adminPassword.focus();
+                }
+            } catch (err) {
+                showAlert('Network error communicating with authentication service.');
+            } finally {
+                btnSubmit.disabled = false;
+                submitText.textContent = 'Authorize & Enter TOC';
+            }
+        });
+    </script>
+</body>
+</html>

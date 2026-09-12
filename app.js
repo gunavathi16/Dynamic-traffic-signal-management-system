@@ -1,5 +1,5 @@
 /**
- * AURA-TRAFFIC AI // Enterprise Operations Center Logic
+ * INTELLIFLOW TOC // Enterprise Operations Center Logic
  * High-definition 2D arterial corridor simulator, AI Text-to-SQL copilot, and telemetry synchronizer.
  */
 
@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // DOM Selectors
     // -------------------------------------------------------------
     const canvas = document.getElementById('trafficCanvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas ? canvas.getContext('2d') : null;
 
     // Header & Badges
     const badgeSimState = document.getElementById('badgeSimState');
@@ -49,6 +49,81 @@ document.addEventListener('DOMContentLoaded', () => {
     const iconSimPlay = document.getElementById('iconSimPlay');
     const btnResetView = document.getElementById('btnResetView');
     const nodesGrid = document.getElementById('nodesGrid');
+    const labelAdminUsername = document.getElementById('labelAdminUsername');
+    const btnLogout = document.getElementById('btnLogout');
+
+    // Simulation Node Switcher & Inspector HUD
+    const simNodeChips = document.getElementById('simNodeChips');
+    const nodeInspectorCard = document.getElementById('nodeInspectorCard');
+    const inspectorNodeName = document.getElementById('inspectorNodeName');
+    const inspectorNodeId = document.getElementById('inspectorNodeId');
+    const inspectorPhase = document.getElementById('inspectorPhase');
+    const inspectorQueue = document.getElementById('inspectorQueue');
+    const inspectorDelay = document.getElementById('inspectorDelay');
+    const inspectorSpeed = document.getElementById('inspectorSpeed');
+    const inspectorCongestion = document.getElementById('inspectorCongestion');
+    const btnPreemptFocusedNode = document.getElementById('btnPreemptFocusedNode');
+    const btnCloseInspector = document.getElementById('btnCloseInspector');
+    const btnResetNodeFocus = document.getElementById('btnResetNodeFocus');
+
+    // -------------------------------------------------------------
+    // Admin Session Verification
+    // -------------------------------------------------------------
+    const adminToken = localStorage.getItem('traffic_admin_token') || sessionStorage.getItem('traffic_admin_token');
+    const cachedUser = localStorage.getItem('traffic_admin_user');
+
+    if (cachedUser && labelAdminUsername) {
+        try {
+            const parsed = JSON.parse(cachedUser);
+            if (parsed.username) {
+                labelAdminUsername.innerText = parsed.username.toUpperCase();
+            }
+        } catch (e) {}
+    }
+
+    async function verifyAdminSession() {
+        if (!adminToken) {
+            window.location.replace('/login');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/auth/verify', {
+                headers: { 'Authorization': 'Bearer ' + adminToken }
+            });
+            if (!res.ok) {
+                localStorage.removeItem('traffic_admin_token');
+                localStorage.removeItem('traffic_admin_user');
+                sessionStorage.removeItem('traffic_admin_token');
+                window.location.replace('/login');
+            } else {
+                const data = await res.json();
+                if (data.user && labelAdminUsername) {
+                    labelAdminUsername.innerText = data.user.username.toUpperCase();
+                }
+            }
+        } catch (e) {
+            // Keep going if transient network check
+        }
+    }
+    verifyAdminSession();
+
+    if (btnLogout) {
+        btnLogout.addEventListener('click', async () => {
+            try {
+                if (adminToken) {
+                    await fetch('/api/auth/logout', {
+                        method: 'POST',
+                        headers: { 'Authorization': 'Bearer ' + adminToken }
+                    });
+                }
+            } catch (e) {}
+            localStorage.removeItem('traffic_admin_token');
+            localStorage.removeItem('traffic_admin_user');
+            sessionStorage.removeItem('traffic_admin_token');
+            window.location.replace('/login');
+        });
+    }
 
     // State Variables
     let currentTelemetry = null;
@@ -56,10 +131,121 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentQueryResult = null;
     let selectedNodeId = null;
 
+    // Check URL parameters for focused node (e.g. from index dashboard click)
+    const urlParams = new URLSearchParams(window.location.search);
+    const nodeFromUrl = urlParams.get('node');
+    if (nodeFromUrl) {
+        selectedNodeId = nodeFromUrl;
+    }
+
+    // -------------------------------------------------------------
+    // Node Focus & Inspector HUD Controller
+    // -------------------------------------------------------------
+    function focusNode(nodeId) {
+        selectedNodeId = nodeId;
+        syncNodeChips();
+        updateNodeInspector();
+        if (nodeId && auditTicker) {
+            auditTicker.innerText = `INSPECTOR: SUMO simulation focus locked on ${nodeId}. TraCI stream active.`;
+        }
+    }
+
+    function syncNodeChips() {
+        if (!simNodeChips) return;
+        const chips = simNodeChips.querySelectorAll('.sim-node-chip[data-node]');
+        chips.forEach(chip => {
+            const chipNode = chip.getAttribute('data-node');
+            if (selectedNodeId && chipNode && selectedNodeId.toLowerCase() === chipNode.toLowerCase()) {
+                chip.classList.add('active');
+            } else {
+                chip.classList.remove('active');
+            }
+        });
+    }
+
+    function updateNodeInspector() {
+        if (!nodeInspectorCard) return;
+        if (!selectedNodeId) {
+            nodeInspectorCard.style.display = 'none';
+            return;
+        }
+
+        const node = (currentTelemetry && currentTelemetry.intersections)
+            ? currentTelemetry.intersections.find(n => n.id.toLowerCase() === selectedNodeId.toLowerCase())
+            : null;
+
+        if (!node) {
+            nodeInspectorCard.style.display = 'block';
+            if (inspectorNodeName) inspectorNodeName.innerText = `${selectedNodeId} — Signal Intersection`;
+            if (inspectorNodeId) inspectorNodeId.innerText = `${selectedNodeId} • Synchronizing TraCI stream...`;
+            return;
+        }
+
+        nodeInspectorCard.style.display = 'block';
+        if (inspectorNodeName) inspectorNodeName.innerText = `${node.name}`;
+        if (inspectorNodeId) inspectorNodeId.innerText = `${node.id} • Dynamic Webster Engine`;
+        if (inspectorPhase) {
+            inspectorPhase.innerText = node.phase_name || 'EW_GREEN';
+            inspectorPhase.className = `inspector-stat-val ${node.current_phase === 0 ? 'text-green' : node.current_phase === 1 ? 'text-amber' : 'text-red'}`;
+        }
+        if (inspectorQueue) inspectorQueue.innerText = `${node.queue_length} veh`;
+        if (inspectorDelay) inspectorDelay.innerText = `${node.waiting_time_sec}s`;
+        if (inspectorSpeed) inspectorSpeed.innerText = `${node.avg_speed_kmh} km/h`;
+        if (inspectorCongestion) {
+            inspectorCongestion.innerText = node.congestion_level;
+            inspectorCongestion.className = `status-tag ${(node.congestion_level || 'low').toLowerCase()}`;
+        }
+    }
+
+    if (simNodeChips) {
+        simNodeChips.addEventListener('click', (e) => {
+            const chip = e.target.closest('.sim-node-chip[data-node]');
+            if (chip) {
+                focusNode(chip.getAttribute('data-node'));
+            }
+        });
+    }
+
+    if (btnResetNodeFocus) {
+        btnResetNodeFocus.addEventListener('click', () => {
+            focusNode(null);
+            if (auditTicker) auditTicker.innerText = 'INSPECTOR: Corridor wide view active.';
+        });
+    }
+
+    if (btnCloseInspector) {
+        btnCloseInspector.addEventListener('click', () => {
+            focusNode(null);
+        });
+    }
+
+    if (btnPreemptFocusedNode) {
+        btnPreemptFocusedNode.addEventListener('click', async () => {
+            if (!selectedNodeId) return;
+            try {
+                const res = await fetch('/api/emergency/dispatch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        vehicle_type: 'AMBULANCE',
+                        route: `Preemptive Green Corridor (${selectedNodeId})`
+                    })
+                });
+                if (res.ok) {
+                    if (auditTicker) auditTicker.innerText = `EMERGENCY PREEMPTION: Green corridor priority established through ${selectedNodeId}!`;
+                    updateTelemetry();
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        });
+    }
+
     // -------------------------------------------------------------
     // Live Clock
     // -------------------------------------------------------------
     function updateClock() {
+        if (!clockUtc) return;
         const now = new Date();
         clockUtc.innerText = now.toUTCString().slice(17, 25) + ' UTC';
     }
@@ -70,12 +256,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Canvas Sizing & Vehicle Physics
     // -------------------------------------------------------------
     function resizeCanvas() {
+        if (!canvas) return;
         const rect = canvas.parentElement.getBoundingClientRect();
         canvas.width = rect.width;
         canvas.height = rect.height;
     }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
+    if (canvas) {
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+    }
 
     function initVehicles() {
         vehicles = [];
@@ -142,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnResetView) {
         btnResetView.addEventListener('click', () => {
             initVehicles();
-            selectedNodeId = null;
+            focusNode(null);
         });
     }
 
@@ -273,7 +462,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 2. Intersection Controllers & High-Resolution Signal Heads
         function drawSignalNode(x, y, nodeId, title, nodeData) {
-            const isSelected = (selectedNodeId === nodeId);
+            const isSelected = selectedNodeId && (
+                selectedNodeId.toLowerCase() === nodeId.toLowerCase() ||
+                selectedNodeId.toLowerCase() === nodeId.replace(/\s+/g, '').toLowerCase()
+            );
             // Phases: 0 = EW Green, 1 = EW Yellow, 2 = NS Green, 3 = NS Yellow
             const phase = nodeData ? nodeData.current_phase : 0;
             const isEWGreen = (phase === 0);
@@ -282,15 +474,75 @@ document.addEventListener('DOMContentLoaded', () => {
             const isNSYel = (phase === 3);
 
             // Intersection Core Box
-            ctx.fillStyle = isSelected ? 'rgba(56, 189, 248, 0.15)' : '#0f172a';
+            ctx.fillStyle = isSelected ? 'rgba(56, 189, 248, 0.2)' : '#0f172a';
             ctx.fillRect(x - roadW / 2, y - roadW / 2, roadW, roadW);
             ctx.strokeStyle = isSelected ? '#38bdf8' : (nodeData && nodeData.emergency_override) ? '#10b981' : '#334155';
-            ctx.lineWidth = isSelected ? 2 : 1.5;
+            ctx.lineWidth = isSelected ? 2.5 : 1.5;
             ctx.strokeRect(x - roadW / 2, y - roadW / 2, roadW, roadW);
+
+            // High-Tech HUD Reticle when Node is Selected
+            if (isSelected) {
+                const t = Date.now() / 240;
+                const pulseR = 4 + 3 * Math.sin(t);
+                ctx.save();
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 2;
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 15;
+
+                // Pulsing outer beacon circle
+                ctx.beginPath();
+                ctx.arc(x, y, (roadW / 2) + 12 + pulseR, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // 4 Corner HUD Reticle Brackets
+                const bSize = 10;
+                const bOffset = (roadW / 2) + 7;
+                ctx.lineWidth = 2.5;
+
+                // Top-Left
+                ctx.beginPath();
+                ctx.moveTo(x - bOffset, y - bOffset + bSize);
+                ctx.lineTo(x - bOffset, y - bOffset);
+                ctx.lineTo(x - bOffset + bSize, y - bOffset);
+                ctx.stroke();
+
+                // Top-Right
+                ctx.beginPath();
+                ctx.moveTo(x + bOffset - bSize, y - bOffset);
+                ctx.lineTo(x + bOffset, y - bOffset);
+                ctx.lineTo(x + bOffset, y - bOffset + bSize);
+                ctx.stroke();
+
+                // Bottom-Left
+                ctx.beginPath();
+                ctx.moveTo(x - bOffset, y + bOffset - bSize);
+                ctx.lineTo(x - bOffset, y + bOffset);
+                ctx.lineTo(x - bOffset + bSize, y + bOffset);
+                ctx.stroke();
+
+                // Bottom-Right
+                ctx.beginPath();
+                ctx.moveTo(x + bOffset - bSize, y + bOffset);
+                ctx.lineTo(x + bOffset, y + bOffset);
+                ctx.lineTo(x + bOffset, y + bOffset - bSize);
+                ctx.stroke();
+
+                // HUD Target Banner above
+                ctx.fillStyle = 'rgba(6, 182, 212, 0.95)';
+                ctx.fillRect(x - 58, y - roadW / 2 - 38, 116, 17);
+                ctx.fillStyle = '#080c14';
+                ctx.font = '700 9px "JetBrains Mono", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('TARGETED SUMO NODE', x, y - roadW / 2 - 26);
+                ctx.textAlign = 'start';
+
+                ctx.restore();
+            }
 
             // Node ID & Title
             ctx.fillStyle = isSelected ? '#38bdf8' : '#f8fafc';
-            ctx.font = '600 11px "Inter", sans-serif';
+            ctx.font = isSelected ? '700 12px "Inter", sans-serif' : '600 11px "Inter", sans-serif';
             ctx.fillText(nodeId, x - 18, y - roadW / 2 - 16);
 
             // EW Signal Post (East side)
@@ -617,7 +869,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const timeNow = Date.now() / 120;
             const isRedStrobe = (Math.floor(timeNow) % 2 === 0);
 
-            // Strobe aura
+            // Strobe beacon light
             ctx.beginPath();
             ctx.arc(emX, emY, 26, 0, Math.PI * 2);
             ctx.fillStyle = isRedStrobe ? 'rgba(239, 68, 68, 0.28)' : 'rgba(2, 132, 199, 0.28)';
@@ -639,23 +891,27 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.fillText(em.vehicle_type || 'EMERGENCY', emX - 22, emY - 10);
         }
 
-        requestAnimationFrame(renderCanvas);
-    }
-    requestAnimationFrame(renderCanvas);
-
-    // Click on canvas to select intersection node
-    canvas.addEventListener('click', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const w = canvas.width;
-        if (Math.abs(clickX - (w * 0.32)) < 50) {
-            selectedNodeId = 'Node2';
-            auditTicker.innerText = 'INSPECTOR: Node 2 (Downtown West) selected for telemetry focus.';
-        } else if (Math.abs(clickX - (w * 0.68)) < 50) {
-            selectedNodeId = 'Node5';
-            auditTicker.innerText = 'INSPECTOR: Node 5 (Downtown East) selected for telemetry focus.';
+        if (ctx) {
+            requestAnimationFrame(renderCanvas);
         }
-    });
+    }
+
+    if (canvas && ctx) {
+        initVehicles();
+        requestAnimationFrame(renderCanvas);
+
+        // Click on canvas to select intersection node
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const w = canvas.width;
+            if (Math.abs(clickX - (w * 0.32)) < 50) {
+                focusNode('Node2');
+            } else if (Math.abs(clickX - (w * 0.68)) < 50) {
+                focusNode('Node5');
+            }
+        });
+    }
 
     // -------------------------------------------------------------
     // Telemetry Polling & Live Data Binding
@@ -669,27 +925,31 @@ document.addEventListener('DOMContentLoaded', () => {
             currentTelemetry = tel;
 
             // Status strip
-            labelSimStep.innerText = tel.is_running ? `SIM: ACTIVE (STEP ${tel.step})` : 'SIM: PAUSED';
-            badgeSimState.className = tel.is_running ? 'status-chip active-green' : 'status-chip';
+            if (labelSimStep) labelSimStep.innerText = tel.is_running ? `SIM: ACTIVE (STEP ${tel.step})` : 'SIM: PAUSED';
+            if (badgeSimState) badgeSimState.className = tel.is_running ? 'status-chip active-green' : 'status-chip';
 
-            labelDbEngine.innerText = `DB: ${data.database_engine.toUpperCase()}`;
-            labelAiEngine.innerText = `AI: ${data.anthropic_key_set ? 'CLAUDE 3.5' : 'SEMANTIC SQL'}`;
+            if (labelDbEngine) labelDbEngine.innerText = `DB: ${data.database_engine.toUpperCase()}`;
+            if (labelAiEngine) labelAiEngine.innerText = `AI: ${data.anthropic_key_set ? 'CLAUDE 3.5' : 'SEMANTIC SQL'}`;
 
             if (tel.emergency_count > 0) {
-                badgeEmergency.style.display = 'inline-flex';
-                document.getElementById('labelEmergencyActive').innerText = `CORRIDOR LOCK: ACTIVE (${tel.emergency_count})`;
+                if (badgeEmergency) badgeEmergency.style.display = 'inline-flex';
+                const emLabel = document.getElementById('labelEmergencyActive');
+                if (emLabel) emLabel.innerText = `CORRIDOR LOCK: ACTIVE (${tel.emergency_count})`;
             } else {
-                badgeEmergency.style.display = 'none';
+                if (badgeEmergency) badgeEmergency.style.display = 'none';
             }
 
-            // KPIs
-            kpiThroughput.innerText = (tel.total_vehicles * 42).toLocaleString();
-            kpiWaitTime.innerText = tel.avg_waiting_time_sec;
-            kpiQueue.innerText = tel.total_queue_vehicles;
-            kpiAvgSpeed.innerText = tel.avg_speed_kmh;
+            // KPIs (on Overview dashboard)
+            if (kpiThroughput) kpiThroughput.innerText = (tel.total_vehicles * 42).toLocaleString();
+            if (kpiWaitTime) kpiWaitTime.innerText = tel.avg_waiting_time_sec;
+            if (kpiQueue) kpiQueue.innerText = tel.total_queue_vehicles;
+            if (kpiAvgSpeed) kpiAvgSpeed.innerText = tel.avg_speed_kmh;
 
-            // Render Nodes Grid
-            renderNodesGrid(tel.intersections);
+            // Update Focused Node Inspector HUD (on simulation page)
+            updateNodeInspector();
+
+            // Render Nodes Grid (on Overview dashboard)
+            if (nodesGrid) renderNodesGrid(tel.intersections);
 
         } catch (err) {
             console.error('Error fetching telemetry:', err);
@@ -697,7 +957,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderNodesGrid(nodes) {
-        if (!nodes) return;
+        if (!nodes || !nodesGrid) return;
         nodesGrid.innerHTML = nodes.map(node => {
             const isRed = node.current_phase >= 2;
             const isYel = node.current_phase === 1;
@@ -706,7 +966,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const isLocked = node.emergency_override;
 
             return `
-            <div class="node-card ${isLocked ? 'emergency-locked' : ''}">
+            <div class="node-card ${isLocked ? 'emergency-locked' : ''}"
+                 data-node-id="${node.id}"
+                 role="button"
+                 tabindex="0"
+                 title="Click to launch SUMO simulation for ${node.id} (${node.name})">
                 <div class="node-card-top">
                     <div class="node-title-group">
                         <h3>${node.name}</h3>
@@ -746,13 +1010,49 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${isLocked ? '⚡ GREEN LOCK' : 'ADAPTIVE'}
                     </span>
                 </div>
+
+                <div class="node-card-action">
+                    <span>Open in SUMO Simulation</span>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </div>
             </div>
             `;
         }).join('');
     }
 
+    if (nodesGrid) {
+        nodesGrid.addEventListener('click', (e) => {
+            const card = e.target.closest('.node-card');
+            if (!card) return;
+            const nodeId = card.getAttribute('data-node-id');
+            if (nodeId) {
+                window.location.href = `/simulation?node=${encodeURIComponent(nodeId)}`;
+            }
+        });
+        nodesGrid.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                const card = e.target.closest('.node-card');
+                if (!card) return;
+                const nodeId = card.getAttribute('data-node-id');
+                if (nodeId) {
+                    e.preventDefault();
+                    window.location.href = `/simulation?node=${encodeURIComponent(nodeId)}`;
+                }
+            }
+        });
+    }
+
     setInterval(updateTelemetry, 1200);
     updateTelemetry();
+
+    if (nodeFromUrl && canvas) {
+        setTimeout(() => {
+            canvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 200);
+    }
 
     // -------------------------------------------------------------
     // AI Copilot & Text-to-SQL Terminal
@@ -829,22 +1129,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    btnSendQuery.addEventListener('click', () => {
-        executeQuery(terminalInput.value);
-    });
-
-    terminalInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+    if (btnSendQuery && terminalInput) {
+        btnSendQuery.addEventListener('click', () => {
             executeQuery(terminalInput.value);
-        }
-    });
+        });
+
+        terminalInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                executeQuery(terminalInput.value);
+            }
+        });
+
+        // Execute baseline query on launch
+        executeQuery(terminalInput.value);
+    }
 
     // Preset Prompt Chips
     document.querySelectorAll('.chip-btn').forEach(chip => {
         chip.addEventListener('click', () => {
             const q = chip.getAttribute('data-query');
-            terminalInput.value = q;
-            executeQuery(q);
+            if (terminalInput) {
+                terminalInput.value = q;
+                executeQuery(q);
+            }
         });
     });
 
@@ -902,33 +1209,78 @@ document.addEventListener('DOMContentLoaded', () => {
     // -------------------------------------------------------------
     // Operations & Simulation Controls
     // -------------------------------------------------------------
-    btnAmbulance.addEventListener('click', async () => {
-        await fetch('/api/emergency/dispatch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vehicle_type: 'AMBULANCE', route: 'Downtown Corridor (Node2 -> Node5)' })
+    if (btnAmbulance) {
+        btnAmbulance.addEventListener('click', async () => {
+            await fetch('/api/emergency/dispatch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vehicle_type: 'AMBULANCE', route: 'Downtown Corridor (Node2 -> Node5)' })
+            });
+            auditTicker.innerText = 'PRIORITY OVERRIDE: Ambulance dispatched. Corridor green-wave activated.';
+            updateTelemetry();
         });
-        auditTicker.innerText = 'PRIORITY OVERRIDE: Ambulance dispatched. Corridor green-wave activated.';
-        updateTelemetry();
-    });
+    }
 
-    btnFireRescue.addEventListener('click', async () => {
-        await fetch('/api/emergency/dispatch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ vehicle_type: 'FIRE_ENGINE', route: 'Downtown Corridor (Node2 -> Node5)' })
+    if (btnFireRescue) {
+        btnFireRescue.addEventListener('click', async () => {
+            await fetch('/api/emergency/dispatch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ vehicle_type: 'FIRE_ENGINE', route: 'Downtown Corridor (Node2 -> Node5)' })
+            });
+            auditTicker.innerText = 'PRIORITY OVERRIDE: Fire Rescue dispatched. Corridor green-wave activated.';
+            updateTelemetry();
         });
-        auditTicker.innerText = 'PRIORITY OVERRIDE: Fire Rescue dispatched. Corridor green-wave activated.';
-        updateTelemetry();
-    });
+    }
 
-    btnToggleSim.addEventListener('click', async () => {
-        const resp = await fetch('/api/simulation/toggle', { method: 'POST' });
-        const res = await resp.json();
-        labelSimBtn.innerText = res.is_running ? 'Pause' : 'Resume';
-        updateTelemetry();
-    });
+    if (btnToggleSim) {
+        btnToggleSim.addEventListener('click', async () => {
+            const resp = await fetch('/api/simulation/toggle', { method: 'POST' });
+            const res = await resp.json();
+            labelSimBtn.innerText = res.is_running ? 'Pause' : 'Resume';
+            updateTelemetry();
+        });
+    }
 
-    // Execute baseline query on launch
-    executeQuery(terminalInput.value);
+    // -------------------------------------------------------------
+    // Dashboard Recent Telemetry Polling (Front Page)
+    // -------------------------------------------------------------
+    const dashboardMetricsBody = document.getElementById('dashboardMetricsBody');
+    async function updateDashboardMetrics() {
+        if (!dashboardMetricsBody) return;
+        try {
+            const resp = await fetch('/api/metrics/recent');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (data.metrics && data.metrics.length > 0) {
+                dashboardMetricsBody.innerHTML = data.metrics.map(m => {
+                    const congClass = (m.congestion_level || 'low').toLowerCase();
+                    const timeStr = m.timestamp ? m.timestamp.slice(11, 19) : '--:--:--';
+                    return `
+                        <tr data-node-id="${m.intersection_id}" style="cursor:pointer;" title="Click to view ${m.name || m.intersection_id} in SUMO simulation">
+                            <td style="font-family:var(--font-mono); color:var(--accent-cyan); font-weight:600;">${timeStr}</td>
+                            <td><strong class="table-node-link">${m.name || m.intersection_id} ↗</strong></td>
+                            <td><span style="font-family:var(--font-mono);">${m.vehicle_count}</span></td>
+                            <td><span style="font-family:var(--font-mono);">${m.avg_speed_kmh} km/h</span></td>
+                            <td><span style="font-family:var(--font-mono);">${m.queue_length} veh</span></td>
+                            <td><span style="font-family:var(--font-mono);">${m.waiting_time_sec}s</span></td>
+                            <td><span class="status-tag ${congClass}">${m.congestion_level}</span></td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        } catch (e) {}
+    }
+    if (dashboardMetricsBody) {
+        dashboardMetricsBody.addEventListener('click', (e) => {
+            const tr = e.target.closest('tr[data-node-id]');
+            if (!tr) return;
+            const nodeId = tr.getAttribute('data-node-id');
+            if (nodeId) {
+                window.location.href = `/simulation?node=${encodeURIComponent(nodeId)}`;
+            }
+        });
+        updateDashboardMetrics();
+        setInterval(updateDashboardMetrics, 2000);
+    }
 });

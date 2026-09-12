@@ -5,17 +5,22 @@ Powered by FastAPI, Uvicorn, PostgreSQL/SQLite, and Anthropic Claude Text-to-SQL
 
 import os
 import sys
-from typing import Optional
-from fastapi import FastAPI, HTTPException
+import secrets
+import time
+from typing import Optional, Dict, Any
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Internal modules
-from db.db_manager import init_db, execute_safe_query, ACTIVE_ENGINE
+from db.db_manager import init_db, execute_safe_query, ACTIVE_ENGINE, authenticate_admin
 from ai_agent.nl_sql_agent import TrafficNLSQLAgent, ANTHROPIC_AVAILABLE
 from traffic_engine.adaptive_controller import traffic_controller
+
+# In-Memory Active Admin Sessions: token -> session dict
+ACTIVE_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 # Initialize Database
 init_db()
@@ -49,6 +54,91 @@ class AIQueryRequest(BaseModel):
 class EmergencyDispatchRequest(BaseModel):
     vehicle_type: Optional[str] = "AMBULANCE"
     route: Optional[str] = "Main St Corridor (Node2 -> Node5)"
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.get("/login")
+async def get_login_page():
+    """Serves the Admin Authentication Gateway page."""
+    login_path = os.path.join(BASE_DIR, "login.html")
+    if os.path.exists(login_path):
+        return FileResponse(login_path)
+    return FileResponse(os.path.join(BASE_DIR, "index.html"))
+
+
+@app.get("/simulation")
+async def get_simulation_page():
+    """Serves the dedicated Digital Twin Simulation & AI Copilot page."""
+    sim_path = os.path.join(BASE_DIR, "simulation.html")
+    if os.path.exists(sim_path):
+        return FileResponse(sim_path)
+    return FileResponse(os.path.join(BASE_DIR, "index.html"))
+
+
+@app.post("/api/auth/login")
+async def admin_login(payload: AdminLoginRequest):
+    """Authenticates administrator credentials and issues an active session token."""
+    user = authenticate_admin(payload.username, payload.password)
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Access Denied: Invalid administrator credentials or insufficient security clearance."
+        )
+
+    # Issue secure cryptographic token
+    token = secrets.token_hex(32)
+    ACTIVE_SESSIONS[token] = {
+        "id": user["id"],
+        "username": user["username"],
+        "role": user["role"],
+        "created_at": time.time()
+    }
+
+    return {
+        "success": True,
+        "token": token,
+        "user": {
+            "username": user["username"],
+            "role": user["role"]
+        },
+        "message": "Administrator clearance verified. Authorization granted."
+    }
+
+
+@app.get("/api/auth/verify")
+async def verify_admin_session(authorization: Optional[str] = Header(None)):
+    """Verifies that an administrator session token is active."""
+    token = None
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+
+    if not token or token not in ACTIVE_SESSIONS:
+        raise HTTPException(
+            status_code=401,
+            detail="Session invalid, expired, or authorization header missing."
+        )
+
+    session_info = ACTIVE_SESSIONS[token]
+    return {
+        "authenticated": True,
+        "user": {
+            "username": session_info["username"],
+            "role": session_info["role"]
+        }
+    }
+
+
+@app.post("/api/auth/logout")
+async def admin_logout(authorization: Optional[str] = Header(None)):
+    """Terminates and invalidates an active administrator session."""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        ACTIVE_SESSIONS.pop(token, None)
+    return {"success": True, "message": "Administrator session successfully revoked."}
 
 
 @app.get("/")

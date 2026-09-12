@@ -6,6 +6,8 @@ Supports PostgreSQL (via psycopg2) with automatic fallback to SQLite.
 import os
 import sqlite3
 import datetime
+import hashlib
+import secrets
 from typing import List, Dict, Any, Tuple, Optional
 
 # Optional psycopg2
@@ -127,10 +129,24 @@ def init_db():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (intersection_id) REFERENCES intersections(id)
         );
+
+        CREATE TABLE IF NOT EXISTS admin_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            role TEXT DEFAULT 'SUPER_ADMIN',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_admin_username ON admin_users(username);
         """)
     else:
         with open(SCHEMA_SQL_PATH, "r", encoding="utf-8") as f:
             cursor.execute(f.read())
+
+    # Ensure admin user is seeded
+    seed_admin_user()
 
     # Seed baseline intersections if table is empty
     cursor.execute("SELECT COUNT(*) FROM intersections")
@@ -274,3 +290,102 @@ def clear_emergency_event(vehicle_id: str):
         conn.commit()
     finally:
         conn.close()
+
+
+# -------------------------------------------------------------
+# Admin Authentication & Security
+# -------------------------------------------------------------
+
+def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
+    """
+    Hashes a password using PBKDF2-HMAC-SHA256 with 100,000 iterations.
+    Returns (hex_hash, salt).
+    """
+    if not salt:
+        salt = secrets.token_hex(16)
+    pw_hash = hashlib.pbkdf2_hmac(
+        'sha256',
+        password.encode('utf-8'),
+        salt.encode('utf-8'),
+        100000
+    ).hex()
+    return pw_hash, salt
+
+
+def verify_password(password: str, password_hash: str, salt: str) -> bool:
+    """Verifies a plain text password against stored hash and salt."""
+    test_hash, _ = hash_password(password, salt=salt)
+    return secrets.compare_digest(test_hash, password_hash)
+
+
+def seed_admin_user(default_username: str = "admin", default_password: str = "admin123") -> bool:
+    """
+    Seeds the initial administrator account if no admin accounts exist.
+    Credentials can also be customized via ADMIN_USERNAME and ADMIN_PASSWORD env vars.
+    """
+    username = os.getenv("ADMIN_USERNAME", default_username).strip()
+    password = os.getenv("ADMIN_PASSWORD", default_password)
+
+    conn, engine = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        q_check = "SELECT COUNT(*) FROM admin_users WHERE username = ?" if engine == "sqlite" else "SELECT COUNT(*) FROM admin_users WHERE username = %s"
+        cursor.execute(q_check, (username,))
+        count = cursor.fetchone()[0]
+        if count == 0:
+            pw_hash, salt = hash_password(password)
+            q_ins = """
+            INSERT INTO admin_users (username, password_hash, salt, role)
+            VALUES (?, ?, ?, 'SUPER_ADMIN')
+            """ if engine == "sqlite" else """
+            INSERT INTO admin_users (username, password_hash, salt, role)
+            VALUES (%s, %s, %s, 'SUPER_ADMIN')
+            """
+            cursor.execute(q_ins, (username, pw_hash, salt))
+            conn.commit()
+            return True
+        return False
+    finally:
+        conn.close()
+
+
+def authenticate_admin(username: str, password: str) -> Optional[Dict[str, Any]]:
+    """
+    Authenticates an administrator with username and password.
+    Returns admin details if valid; None otherwise.
+    """
+    if not username or not password:
+        return None
+
+    conn, engine = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        q = "SELECT id, username, password_hash, salt, role FROM admin_users WHERE username = ?" if engine == "sqlite" else "SELECT id, username, password_hash, salt, role FROM admin_users WHERE username = %s"
+        cursor.execute(q, (username.strip(),))
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        if engine == "sqlite":
+            user_id = row["id"]
+            uname = row["username"]
+            pw_hash = row["password_hash"]
+            salt = row["salt"]
+            role = row["role"]
+        else:
+            user_id, uname, pw_hash, salt, role = row[0], row[1], row[2], row[3], row[4]
+
+        if verify_password(password, pw_hash, salt):
+            # Update last_login
+            q_upd = "UPDATE admin_users SET last_login = CURRENT_TIMESTAMP WHERE id = ?" if engine == "sqlite" else "UPDATE admin_users SET last_login = CURRENT_TIMESTAMP WHERE id = %s"
+            cursor.execute(q_upd, (user_id,))
+            conn.commit()
+            return {
+                "id": user_id,
+                "username": uname,
+                "role": role
+            }
+        return None
+    finally:
+        conn.close()
+

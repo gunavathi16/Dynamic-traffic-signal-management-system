@@ -52,7 +52,18 @@ CREATE TABLE IF NOT EXISTS signal_phase_logs (
     FOREIGN KEY (intersection_id) REFERENCES intersections(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS admin_users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(128) NOT NULL,
+    salt VARCHAR(64) NOT NULL,
+    role VARCHAR(30) DEFAULT 'SUPER_ADMIN',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login TIMESTAMP
+);
+
 -- Optimization Indexes
 CREATE INDEX IF NOT EXISTS idx_metrics_intersection_time ON traffic_metrics(intersection_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_emergency_active ON emergency_events(corridor_active);
 CREATE INDEX IF NOT EXISTS idx_phase_logs_intersection ON signal_phase_logs(intersection_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_admin_username ON admin_users(username);
